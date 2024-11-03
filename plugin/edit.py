@@ -2,8 +2,8 @@ import aqt
 import aqt.editor
 import aqt.browser.previewer
 from aqt import gui_hooks
-from aqt.qt import QDialog, Qt, QKeySequence, QShortcut
-from aqt.utils import disable_help_button, restoreGeom, saveGeom, tooltip
+from aqt.qt import Qt, QKeySequence, QShortcut, QCloseEvent, QMainWindow
+from aqt.utils import restoreGeom, saveGeom, tooltip
 from anki.errors import NotFoundError
 from anki.consts import QUEUE_TYPE_SUSPENDED
 from anki.utils import ids2str
@@ -187,15 +187,13 @@ class Edit(aqt.editcurrent.EditCurrent):
     # upon a request to open the dialog via `aqt.dialogs.open()`,
     # the manager will call either the constructor or the `reopen` method
     def __init__(self, note):
-        QDialog.__init__(self, None, Qt.WindowType.Window)
-        aqt.mw.garbage_collect_on_dialog_finish(self)
+        QMainWindow.__init__(self, None, Qt.WindowType.Window)
         self.form = aqt.forms.editcurrent.Ui_Dialog()
         self.form.setupUi(self)
         self.setWindowTitle("Edit")
         self.setMinimumWidth(250)
         self.setMinimumHeight(400)
         restoreGeom(self, self.dialog_geometry_tag)
-        disable_help_button(self)
 
         self.form.buttonBox.setVisible(False)   # hides the Close button bar
         self.setup_editor_buttons()
@@ -215,14 +213,16 @@ class Edit(aqt.editcurrent.EditCurrent):
         self.show_note(note)
         self.bring_to_foreground()
 
-    def cleanup_and_close(self):
+    def cleanup(self):
         gui_hooks.editor_did_load_note.remove(self.editor_did_load_note)
         gui_hooks.operation_did_execute.remove(self.on_operation_did_execute)
 
         self.editor.cleanup()
         saveGeom(self, self.dialog_geometry_tag)
         aqt.dialogs.markClosed(self.dialog_registry_tag)
-        QDialog.reject(self)
+
+    def closeEvent(self, evt: QCloseEvent) -> None:
+        self.editor.call_after_note_saved(self.cleanup)
 
     # This method (mostly) solves (at least on my Windows 10 machine) three issues
     # with window activation. Without this not even too hacky a fix,
@@ -283,7 +283,7 @@ class Edit(aqt.editcurrent.EditCurrent):
             try:
                 self.note = history.get_last_note()
             except IndexError:
-                self.cleanup_and_close()
+                self.cleanup()
                 return
 
         self.show_note(self.note)
